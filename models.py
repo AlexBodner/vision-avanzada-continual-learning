@@ -29,11 +29,10 @@ class LinearProbe(nn.Module):
     def __init__(self, backbone, embedding_dim, num_classes):
         super().__init__()
         self.backbone = backbone
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+        # for param in self.backbone.parameters():
+        #     param.requires_grad = False
         self.classifier = nn.Linear(embedding_dim, num_classes)
 
     def forward(self, x):
-        with torch.no_grad():
-            features = self.backbone(x)
+        features = self.backbone(x)
         return self.classifier(features)

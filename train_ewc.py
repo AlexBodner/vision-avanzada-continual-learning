@@ -22,10 +22,9 @@ def train_classifier(
             labels = labels.to(device)
 
             loss = criterion(images, labels, model, **kwargs)
-
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            optimizer.zero_grad()
 
 
             running_loss += loss.item()
@@ -49,18 +48,31 @@ def evaluate_classifier(model, split_dataloader, criterion, device, **kwargs):
     split_correct = 0
     split_total = 0
 
-    # with torch.no_grad():
-    #     for images, labels in split_dataloader:
-    #         images = images.to(device)
-    #         labels = labels.to(device)
+    if kwargs.get('model_taskA', None) is not None: 
+        for images, labels in split_dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
 
-    #         logits = model(images)
-    #         split_loss = criterion(images, labels, model, **kwargs)
+            logits = model(images)
+            split_loss = criterion(images, labels, model, **kwargs)
 
-    #         split_running_loss += split_loss.item()
-    #         preds = logits.argmax(dim=1)
-    #         split_correct += (preds == labels).sum().item()
-    #         split_total += labels.size(0)
+            split_running_loss += split_loss.item()
+            preds = logits.argmax(dim=1)
+            split_correct += (preds == labels).sum().item()
+            split_total += labels.size(0) 
+    else: #same thing but no grad
+        with torch.no_grad():
+            for images, labels in split_dataloader:
+                images = images.to(device)
+                labels = labels.to(device)
+
+                logits = model(images)
+                split_loss = criterion(images, labels, model, **kwargs)
+
+                split_running_loss += split_loss.item()
+                preds = logits.argmax(dim=1)
+                split_correct += (preds == labels).sum().item()
+                split_total += labels.size(0)
 
     split_loss = split_running_loss / len(split_dataloader)
     split_acc = split_correct / split_total

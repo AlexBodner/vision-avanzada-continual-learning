@@ -1,5 +1,23 @@
 from tqdm import tqdm
+import inspect
 import torch
+
+
+def _forward_model(model, images, task_id):
+    return model(images, task_id=task_id)
+
+
+def _compute_loss(model, images, labels, criterion, task_id=None, **kwargs):
+    logits = _forward_model(model, images, task_id=task_id)
+
+    forward_fn = criterion.forward if hasattr(criterion, "forward") else criterion
+    parameters = inspect.signature(forward_fn).parameters
+
+    if len(parameters) >= 4:
+        return criterion(model, images, labels, task_id=task_id, **kwargs), logits
+    return criterion(logits, labels), logits
+
+
 def train_classifier(
     model,
     train_dataloader,
@@ -8,20 +26,21 @@ def train_classifier(
     criterion,
     num_epochs=10,
     device="mps",
+    task_id=None,
     **kwargs
 ):
     train_losses = []
     val_losses = []
-    model.train()
 
     for epoch in tqdm(range(num_epochs), desc="Training"):
+        model.train()
         running_loss = 0.0
 
         for images, labels in train_dataloader:
             images = images.to(device)
             labels = labels.to(device)
 
-            loss = criterion(images, labels, model, **kwargs)
+            loss, _ = _compute_loss(model, images, labels, criterion, task_id=task_id, **kwargs)
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -35,14 +54,15 @@ def train_classifier(
         for images, labels in val_dataloader:
             images = images.to(device)
             labels = labels.to(device)
-            loss = criterion(images, labels, model, **kwargs)
+            loss, _ = _compute_loss(model, images, labels, criterion, task_id=task_id, **kwargs)
             running_val_loss += loss.item()
 
         val_losses.append(running_val_loss / len(val_dataloader))
 
     return train_losses, val_losses
 
-def evaluate_classifier(model, split_dataloader, criterion, device, **kwargs):
+
+def evaluate_classifier(model, split_dataloader, criterion, device, task_id, **kwargs):
     model.eval()
     split_running_loss = 0.0
     split_correct = 0
@@ -53,8 +73,7 @@ def evaluate_classifier(model, split_dataloader, criterion, device, **kwargs):
             images = images.to(device)
             labels = labels.to(device)
 
-            logits = model(images)
-            split_loss = criterion(images, labels, model, **kwargs)
+            split_loss, logits = _compute_loss(model, images, labels, criterion, task_id=task_id, **kwargs)
 
             split_running_loss += split_loss.item()
             preds = logits.argmax(dim=1)
@@ -66,8 +85,7 @@ def evaluate_classifier(model, split_dataloader, criterion, device, **kwargs):
                 images = images.to(device)
                 labels = labels.to(device)
 
-                logits = model(images)
-                split_loss = criterion(images, labels, model, **kwargs)
+                split_loss, logits = _compute_loss(model, images, labels, criterion, task_id=task_id, **kwargs)
 
                 split_running_loss += split_loss.item()
                 preds = logits.argmax(dim=1)
@@ -83,6 +101,13 @@ def evaluate_task_incremental(model, task_id, loaders, criterion, device,**kwarg
     task_results = {}
     for eval_task in range(0, task_id + 1):
         eval_loader = loaders[eval_task]
-        eval_loss, eval_acc = evaluate_classifier(model, eval_loader, criterion, device, **kwargs)
+        eval_loss, eval_acc = evaluate_classifier(
+            model,
+            eval_loader,
+            criterion,
+            device,
+            task_id=eval_task,
+            **kwargs,
+        )
         task_results[f"task_{eval_task}"] = {"loss": eval_loss, "acc": eval_acc}
     return task_results

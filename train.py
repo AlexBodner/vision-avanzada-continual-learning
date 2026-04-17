@@ -1,5 +1,13 @@
 from tqdm import tqdm
 import torch
+
+
+def _forward_model(model, images, task_id=None):
+    if task_id is None:
+        return model(images)
+    return model(images, task_id=task_id)
+
+
 def train_classifier(
     model,
     train_dataloader,
@@ -9,6 +17,7 @@ def train_classifier(
     lr_scheduler=None,
     num_epochs=10,
     device="mps",
+    task_id=None,
 ):
     train_losses = []
     val_losses = []
@@ -21,7 +30,8 @@ def train_classifier(
             images = images.to(device)
             labels = labels.to(device)
 
-            loss = criterion(model(images), labels)
+            logits = _forward_model(model, images, task_id=task_id)
+            loss = criterion(logits, labels)
 
             optimizer.zero_grad()
             loss.backward()
@@ -38,14 +48,16 @@ def train_classifier(
             for images, labels in val_dataloader:
                 images = images.to(device)
                 labels = labels.to(device)
-                loss = criterion(model(images), labels)
+                logits = _forward_model(model, images, task_id=task_id)
+                loss = criterion(logits, labels)
                 running_val_loss += loss.item()
 
         val_losses.append(running_val_loss / len(val_dataloader))
 
     return train_losses, val_losses
 
-def evaluate_classifier(model, split_dataloader, criterion, device):
+
+def evaluate_classifier(model, split_dataloader, criterion, device, task_id=None):
     model.eval()
     split_running_loss = 0.0
     split_correct = 0
@@ -56,7 +68,7 @@ def evaluate_classifier(model, split_dataloader, criterion, device):
             images = images.to(device)
             labels = labels.to(device)
 
-            logits = model(images)
+            logits = _forward_model(model, images, task_id=task_id)
             split_loss = criterion(logits, labels)
 
             split_running_loss += split_loss.item()
@@ -73,6 +85,12 @@ def evaluate_task_incremental(model, task_id, loaders, criterion, device):
     task_results = {}
     for eval_task in range(0, task_id + 1):
         eval_loader = loaders[eval_task]
-        eval_loss, eval_acc = evaluate_classifier(model, eval_loader, criterion, device)
+        eval_loss, eval_acc = evaluate_classifier(
+            model,
+            eval_loader,
+            criterion,
+            device,
+            task_id=eval_task,
+        )
         task_results[f"task_{eval_task}"] = {"loss": eval_loss, "acc": eval_acc}
     return task_results

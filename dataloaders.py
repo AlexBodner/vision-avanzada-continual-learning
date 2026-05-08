@@ -96,6 +96,27 @@ class TaskDataset(Dataset):
         return img, label
 
 
+class TwoViewWrapper(Dataset):
+    """
+    Envuelve un dataset que devuelve (img, y) y produce ((x1, x2), y).
+
+    La implementación asume transformaciones estocásticas en el dataset base,
+    de modo que dos accesos al mismo índice producen dos vistas aumentadas
+    de la misma imagen subyacente.
+    """
+
+    def __init__(self, base_dataset: Dataset):
+        self.base_dataset = base_dataset
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int):
+        x1, y = self.base_dataset[idx]
+        x2, _ = self.base_dataset[idx]
+        return (x1, x2), y
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Replay Buffer con Reservoir Sampling
 # ──────────────────────────────────────────────────────────────────────────────
@@ -367,6 +388,35 @@ class SequentialCIFAR10:
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
+            pin_memory=True,
+            drop_last=True,
+        )
+
+    def get_task_il_two_view_train_loader(
+        self,
+        task_id: int,
+        use_buffer: bool = False,
+        num_workers: Optional[int] = None,
+    ) -> DataLoader:
+        """
+        Dataloader de entrenamiento Task-IL con dos vistas por muestra.
+
+        Retorna batches en formato ((x1, x2), y), donde x1 y x2 son
+        augmentations independientes de la misma imagen.
+
+        Args:
+            task_id: ID de la tarea actual (0-indexed).
+            use_buffer: Reservado para paridad de firma con otros getters.
+            num_workers: Override opcional para workers del loader.
+        """
+        base_loader = self.get_task_il_train_loader(task_id=task_id, use_buffer=use_buffer)
+        workers = self.num_workers if num_workers is None else num_workers
+
+        return DataLoader(
+            TwoViewWrapper(base_loader.dataset),
+            batch_size=base_loader.batch_size,
+            shuffle=True,
+            num_workers=workers,
             pin_memory=True,
             drop_last=True,
         )

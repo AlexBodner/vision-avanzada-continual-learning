@@ -95,3 +95,80 @@ class TaskIncrementalClassifier(nn.Module):
     def forward_probs(self, x, task_id):
         logits = self.forward(x, task_id)
         return F.softmax(logits, dim=1)
+
+
+class ProjectionHead(nn.Module):
+    """
+    MLP de 2 capas para proyectar embeddings al espacio contrastivo (Phase 1).
+    """
+    def __init__(self, in_dim, out_dim=128):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, in_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_dim, out_dim)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Co2LModel(nn.Module):
+    """
+    Modelo integrador para Co2L que desacopla representación de clasificación.
+    """
+    def __init__(self, backbone, embedding_dim, proj_dim=128):
+        super().__init__()
+        self.backbone = backbone
+        self.projection_head = ProjectionHead(embedding_dim, proj_dim)
+        self.classifier = TaskIncrementalClassifier(self.backbone, embedding_dim)
+
+    def forward_projection(self, x):
+        """Para Fase 1: Entrenamiento de representación."""
+        features = self.backbone(x)
+        return self.projection_head(features)
+
+    def forward_classifier(self, x, task_id):
+        """Para Fase 2: Clasificación Task-IL."""
+        return self.classifier(x, task_id)
+
+    def freeze_representation(self):
+        """Congela backbone y projection head para Fase 2."""
+        for param in self.backbone.parameters():
+            param.requires_grad_(False)
+        for param in self.projection_head.parameters():
+            param.requires_grad_(False)
+
+    def unfreeze_representation(self):
+        """Descongela para Fase 1."""
+        for param in self.backbone.parameters():
+            param.requires_grad_(True)
+        for param in self.projection_head.parameters():
+            param.requires_grad_(True)
+
+
+class ClassIncrementalClassifier(nn.Module):
+    """
+    Clasificador para el escenario Class-IL (Single Head).
+    Mantiene una única cabeza que crece o se enmascara para 10 clases.
+    """
+    def __init__(self, backbone, embedding_dim, total_classes=10):
+        super().__init__()
+        self.backbone = backbone
+        self.embedding_dim = embedding_dim
+        self.head = nn.Linear(embedding_dim, total_classes)
+        # Máscara para activar clases conforme se ven en las tareas
+        self.register_buffer("active_classes", torch.zeros(total_classes))
+
+    def add_task(self, classes):
+        """Marca una lista de clases como activas para la inferencia global."""
+        for c in classes:
+            self.active_classes[c] = 1
+
+    def forward(self, x):
+        features = self.backbone(x)
+        logits = self.head(features)
+        # Durante Class-IL, penalizamos las clases que aún no conocemos
+        mask = (self.active_classes == 0)
+        logits[:, mask] = -1e9
+        return logits

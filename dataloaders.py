@@ -35,19 +35,21 @@ DEFAULT_TASK_CLASSES: List[List[int]] = [
     [8, 9],  # Tarea 4: ship, truck
 ]
 
+# Transform de normalización pura (para aplicar sobre tensores [0,1])
+CIFAR10_NORMALIZE = transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                         (0.2023, 0.1994, 0.2010))
+
 # Transforms estándar para CIFAR-10
 CIFAR10_TRAIN_TRANSFORM = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465),
-                         (0.2023, 0.1994, 0.2010)),
+    CIFAR10_NORMALIZE,
 ])
 
 CIFAR10_TEST_TRANSFORM = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465),
-                         (0.2023, 0.1994, 0.2010)),
+    CIFAR10_NORMALIZE,
 ])
 
 
@@ -160,11 +162,18 @@ class ReplayBuffer:
                 if j < self.max_size:
                     self.buffer[j] = (img.clone(), int(label))
 
-    def get_dataset(self) -> Optional['BufferDataset']:
-        """Retorna un Dataset con los ejemplos almacenados, o None si está vacío."""
+    def get_dataset(self, transform: Optional[transforms.Compose] = None) -> Optional['BufferDataset']:
+        """
+        Retorna un Dataset con los ejemplos almacenados.
+        
+        Args:
+            transform: Transformación a aplicar en __getitem__. Si es None,
+                       se recomienda aplicar al menos CIFAR10_NORMALIZE para 
+                       compatibilidad con modelos estándar.
+        """
         if len(self.buffer) == 0:
             return None
-        return BufferDataset(self.buffer)
+        return BufferDataset(self.buffer, transform=transform)
 
     def get_class_distribution(self) -> Dict[int, int]:
         """Retorna la distribución de clases en el buffer."""
@@ -175,17 +184,47 @@ class ReplayBuffer:
 
 
 class BufferDataset(Dataset):
-    """Dataset wrapper para los ejemplos almacenados en el ReplayBuffer."""
+    """
+    Dataset wrapper para los ejemplos almacenados en el ReplayBuffer.
+    
+    Permite aplicar transformaciones (como aumentos o normalización) al vuelo.
+    """
 
-    def __init__(self, buffer: List[Tuple[torch.Tensor, int]]):
+    def __init__(self, buffer: List[Tuple[torch.Tensor, int]], 
+                 transform: Optional[transforms.Compose] = None):
         self.buffer = buffer
+        self.transform = transform
 
     def __len__(self) -> int:
         return len(self.buffer)
 
     def __getitem__(self, idx: int):
         img, label = self.buffer[idx]
+        # img es un tensor [0, 1] guardado en el buffer
+        if self.transform:
+            img = self.transform(img)
         return img, label
+
+
+class TaskRemappedBufferDataset(Dataset):
+    """
+    Wrapper para BufferDataset que remapea etiquetas originales a locales [0, 1].
+    Útil para Task-Incremental Learning con Replay Buffer.
+    
+    Asume que cada tarea tiene exactamente 2 clases (Seq-CIFAR-10 estándar).
+    """
+
+    def __init__(self, base_buffer_dataset: BufferDataset):
+        self.base_buffer_dataset = base_buffer_dataset
+
+    def __len__(self) -> int:
+        return len(self.base_buffer_dataset)
+
+    def __getitem__(self, idx: int):
+        img, original_label = self.base_buffer_dataset[idx]
+        # Remapeo: Tarea 0 (clases 0,1), Tarea 1 (clases 2,3), etc.
+        local_label = original_label % 2
+        return img, local_label
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -292,7 +331,8 @@ class SequentialCIFAR10:
         train_ds, val_ds = self._split_train_val(task_ds)
 
         if use_buffer and self.buffer is not None:
-            buffer_ds = self.buffer.get_dataset()
+            # Para Class-IL usamos la normalización estándar por defecto
+            buffer_ds = self.buffer.get_dataset(transform=CIFAR10_NORMALIZE)
             if buffer_ds is not None:
                 train_ds = ConcatDataset([train_ds, buffer_ds])
 
@@ -355,7 +395,7 @@ class SequentialCIFAR10:
         dataset_list = [task_ds]
 
         if use_buffer and self.buffer is not None:
-            buffer_ds = self.buffer.get_dataset()
+            buffer_ds = self.buffer.get_dataset(transform=CIFAR10_NORMALIZE)
             if buffer_ds is not None:
                 dataset_list.append(buffer_ds)
 
@@ -382,15 +422,55 @@ class SequentialCIFAR10:
         entrenamiento según el task_id correspondiente.
         """
         task_ds = self.get_task_train_dataset(task_id, remap_labels=True)
+        dataset_list = [task_ds]
+
+        if use_buffer and self.buffer is not None:
+            # Para Task-IL estándar, necesitamos remapear las etiquetas del buffer 
+            # a [0, 1] para que coincidan con la arquitectura de la cabeza (2 salidas).
+            base_buffer_ds = self.buffer.get_dataset(transform=CIFAR10_NORMALIZE)
+            if base_buffer_ds is not None:
+                buffer_ds = TaskRemappedBufferDataset(base_buffer_ds)
+                dataset_list.append(buffer_ds)
+
+        combined = ConcatDataset(dataset_list) if len(dataset_list) > 1 else dataset_list[0]
 
         return DataLoader(
-            task_ds,
+            combined,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
             drop_last=True,
         )
+
+    def get_task_il_train_val_loaders(
+        self, task_id: int, use_buffer: bool = False
+    ) -> Tuple[DataLoader, DataLoader]:
+        """
+        Retorna (train_loader, val_loader) para Task-IL.
+        Hace el split sobre los datos de la tarea actual. El buffer solo va al train.
+        """
+        task_ds = self.get_task_train_dataset(task_id, remap_labels=True)
+        train_ds, val_ds = self._split_train_val(task_ds)
+
+        dataset_list = [train_ds]
+        if use_buffer and self.buffer is not None:
+            base_buffer_ds = self.buffer.get_dataset(transform=CIFAR10_NORMALIZE)
+            if base_buffer_ds is not None:
+                buffer_ds = TaskRemappedBufferDataset(base_buffer_ds)
+                dataset_list.append(buffer_ds)
+
+        combined_train = ConcatDataset(dataset_list) if len(dataset_list) > 1 else dataset_list[0]
+
+        train_loader = DataLoader(
+            combined_train, batch_size=self.batch_size, shuffle=True,
+            num_workers=self.num_workers, pin_memory=True, drop_last=True
+        )
+        val_loader = DataLoader(
+            val_ds, batch_size=self.batch_size, shuffle=False,
+            num_workers=self.num_workers, pin_memory=True
+        )
+        return train_loader, val_loader
 
     def get_task_il_two_view_train_loader(
         self,
@@ -400,21 +480,35 @@ class SequentialCIFAR10:
     ) -> DataLoader:
         """
         Dataloader de entrenamiento Task-IL con dos vistas por muestra.
-
-        Retorna batches en formato ((x1, x2), y), donde x1 y x2 son
-        augmentations independientes de la misma imagen.
-
-        Args:
-            task_id: ID de la tarea actual (0-indexed).
-            use_buffer: Reservado para paridad de firma con otros getters.
-            num_workers: Override opcional para workers del loader.
+        Soporta Replay Buffer aplicando aumentos aleatorios a los datos guardados.
         """
-        base_loader = self.get_task_il_train_loader(task_id=task_id, use_buffer=use_buffer)
-        workers = self.num_workers if num_workers is None else num_workers
+        # 1. Dataset de la tarea actual (con aumentos y normalización)
+        task_ds = self.get_task_train_dataset(task_id, remap_labels=True)
+        datasets_to_combine = [task_ds]
 
+        # 2. Dataset del buffer (si aplica)
+        if use_buffer and self.buffer is not None:
+            # IMPORTANTE: Para el buffer pasamos el transform de entrenamiento 
+            # pero SIN ToTensor (porque ya son tensores).
+            # Como CIFAR10_TRAIN_TRANSFORM tiene ToTensor, definimos uno ad-hoc:
+            buffer_transform = transforms.Compose([
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                CIFAR10_NORMALIZE
+            ])
+            buffer_ds = self.buffer.get_dataset(transform=buffer_transform)
+            if buffer_ds is not None:
+                datasets_to_combine.append(buffer_ds)
+
+        combined_ds = ConcatDataset(datasets_to_combine) if len(datasets_to_combine) > 1 else datasets_to_combine[0]
+        
+        # 3. Envolver en TwoView para contraste
+        two_view_ds = TwoViewWrapper(combined_ds)
+
+        workers = self.num_workers if num_workers is None else num_workers
         return DataLoader(
-            TwoViewWrapper(base_loader.dataset),
-            batch_size=base_loader.batch_size,
+            two_view_ds,
+            batch_size=self.batch_size,
             shuffle=True,
             num_workers=workers,
             pin_memory=True,
@@ -481,20 +575,19 @@ class SequentialCIFAR10:
         Actualiza el replay buffer con datos de la tarea actual.
         Llamar al final de cada tarea.
 
-        Nota: usa el dataset base SIN augmentations para guardar
-        representaciones limpias en el buffer. Las imágenes se almacenan
-        como tensores normalizados (con el test_transform).
+        Nota: guarda las imágenes usando solo ToTensor() (rango [0, 1]).
+        La normalización se aplica dinámicamente al leer para permitir aumentos.
         """
         if self.buffer is None:
             return
 
-        # Crear dataset con test_transform para guardar imágenes limpias
-        clean_train = datasets.CIFAR10(
+        # Dataset "crudo" para el buffer (solo ToTensor)
+        raw_train = datasets.CIFAR10(
             root=self.data_root, train=True, download=False,
-            transform=self.test_transform,
+            transform=transforms.ToTensor(),
         )
         classes = self.task_classes[task_id]
-        task_ds = TaskDataset(clean_train, classes, remap_labels=False)
+        task_ds = TaskDataset(raw_train, classes, remap_labels=False)
         self.buffer.update(task_ds)
 
     def update_classes_seen(self, task_id: int):

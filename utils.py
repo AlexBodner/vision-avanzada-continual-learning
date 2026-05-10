@@ -1,6 +1,6 @@
 
 import torch
-from models import CNN, LinearProbe, TaskIncrementalClassifier
+from models import CNN, LinearProbe, TaskIncrementalClassifier, Co2LModel
 
 def load_classifier(checkpoint_path, device):
     head_ckpt = torch.load(f"{checkpoint_path}/linear_probe_head.pt", map_location=device)
@@ -64,6 +64,38 @@ def load_task_incremental_classifier(checkpoint_path, device):
 
     for task_id, num_classes in checkpoint["task_out_dims"].items():
         model.add_task(task_id=int(task_id), num_classes=num_classes)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model = model.to(device)
+    return model
+
+
+def save_co2l_model(model, checkpoint_path):
+    """Guarda el estado completo de un Co2LModel."""
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "embedding_dim": model.classifier.embedding_dim,
+            "task_out_dims": {
+                int(task_id): head.out_features
+                for task_id, head in model.classifier.heads.items()
+            },
+        },
+        checkpoint_path,
+    )
+
+
+def load_co2l_model(checkpoint_path, device, proj_dim=128):
+    """Carga un Co2LModel desde un checkpoint."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    embedding_dim = checkpoint["embedding_dim"]
+
+    backbone = CNN(in_channels=3, embedding_dim=embedding_dim)
+    model = Co2LModel(backbone, embedding_dim=embedding_dim, proj_dim=proj_dim)
+
+    for task_id, num_classes in checkpoint["task_out_dims"].items():
+        if not model.classifier.has_task(task_id):
+            model.classifier.add_task(task_id=int(task_id), num_classes=num_classes)
 
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)

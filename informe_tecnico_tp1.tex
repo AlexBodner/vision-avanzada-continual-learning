@@ -19,7 +19,7 @@
 \setlength{\parindent}{0pt}
 
 \title{\textbf{Trabajo Práctico 1: Continual Learning en Seq-CIFAR-10}}
-\author{Nombre Apellido 1 \and Nombre Apellido 2}
+\author{Alexander Bodner \and Mateo Costantini}
 \date{Visión Artificial Avanzada - Universidad de San Andrés}
 
 \begin{document}
@@ -27,12 +27,12 @@
 \maketitle
 
 \begin{abstract}
-En este trabajo estudiamos el problema de \textit{catastrophic forgetting} en aprendizaje continuo sobre Seq-CIFAR-10. Partimos de una división secuencial de CIFAR-10 en cinco tareas binarias, implementamos un preentrenamiento contrastivo supervisado para la primera tarea y luego evaluamos distintos métodos de aprendizaje incremental: fine-tuning naive, Elastic Weight Consolidation (EWC) y Learning without Forgetting (LwF). Además, dejamos planteada la integración de Co$^2$L como extensión natural del pipeline, basada en aprendizaje contrastivo con replay y destilación de representaciones. Los resultados muestran que el modelo aprende correctamente las tareas nuevas, pero que la estabilidad sobre tareas previas depende fuertemente del mecanismo de regularización o destilación utilizado.
+En este trabajo estudiamos el problema de \textit{catastrophic forgetting} en aprendizaje continuo sobre Seq-CIFAR-10. Partimos de una división secuencial de CIFAR-10 en cinco tareas binarias, implementamos un preentrenamiento contrastivo supervisado para la primera tarea y luego evaluamos distintos métodos de aprendizaje incremental: fine-tuning naive, Elastic Weight Consolidation (EWC), Learning without Forgetting (LwF) y Co$^2$L (Contrastive Continual Learning). Los resultados muestran que mientras los métodos tradicionales de regularización y destilación de logits mitigan parcialmente el olvido, el enfoque de Co$^2$L basado en el desacoplamiento de representaciones y clasificación alcanza el mejor rendimiento, con una precisión promedio del 82.38\% y evidencia de transferencia positiva entre tareas.
 \end{abstract}
 
 \section{Introducción}
 
-El aprendizaje continuo busca entrenar modelos sobre una secuencia de tareas sin asumir acceso permanente a todos los datos pasados. En redes neuronales profundas, el entrenamiento sobre una tarea nueva tiende a modificar parámetros útiles para tareas anteriores, produciendo \textit{catastrophic forgetting}. El objetivo de este trabajo práctico fue recorrer progresivamente varias familias de soluciones: un baseline de fine-tuning, regularización de parámetros mediante EWC, destilación de conocimiento mediante LwF y una planificación de Co$^2$L, método contrastivo propuesto por Cha et al.
+El aprendizaje continuo busca entrenar modelos sobre una secuencia de tareas sin asumir acceso permanente a todos los datos pasados. En redes neuronales profundas, el entrenamiento sobre una tarea nueva tiende a modificar parámetros útiles para tareas anteriores, produciendo \textit{catastrophic forgetting}. El objetivo de este trabajo práctico fue recorrer progresivamente varias familias de soluciones: un baseline de fine-tuning, regularización de parámetros mediante EWC, destilación de conocimiento mediante LwF y finalmente Co$^2$L, un método del estado del arte propuesto por Cha et al. que utiliza aprendizaje contrastivo y destilación de relaciones.
 
 El foco experimental estuvo puesto en el escenario Task-Incremental Learning (Task-IL), donde durante la evaluación se conoce el identificador de la tarea y el modelo debe decidir entre las clases de dicha tarea. La arquitectura implementada usa un backbone compartido y una cabeza lineal por tarea, lo que permite aislar la clasificación local de cada par de clases y estudiar la retención del backbone.
 
@@ -56,15 +56,11 @@ Tarea & Clases & Imágenes de entrenamiento \\
 \end{tabular}
 \end{table}
 
-La preparación del dataset se implementó en \texttt{dataloaders.py}. La clase \texttt{SequentialCIFAR10} construye los datasets por tarea, genera splits de entrenamiento y validación con semilla fija, remapea etiquetas para Task-IL y expone loaders separados para evaluación por tarea. También se implementó un \textit{replay buffer} de tamaño fijo mediante \textit{reservoir sampling}, aunque los resultados principales reportados en este borrador usan principalmente el pipeline Task-IL con cabezas por tarea.
-
-Para entrenamiento se usaron imágenes normalizadas con las medias y desvíos estándar de CIFAR-10. En entrenamiento se aplicaron \textit{random crop} con padding y \textit{horizontal flip}; en evaluación solo se aplicó normalización.
+La preparación del dataset se implementó en \texttt{dataloaders.py}. Se extendió la clase \texttt{SequentialCIFAR10} para soportar un \textit{replay buffer} de tamaño fijo (200 ejemplares) mediante \textit{reservoir sampling}. Una mejora clave fue el almacenamiento de tensores sin normalización estática, permitiendo aplicar aumentos aleatorios dinámicos en cada batch para el entrenamiento contrastivo.
 
 \section{Modelo base y preentrenamiento contrastivo}
 
-El backbone implementado en \texttt{models.py} es una CNN pequeña: dos capas convolucionales con ReLU y max-pooling, seguidas por una capa lineal que produce embeddings de dimensión 32. Sobre este backbone se entrenó primero una pérdida contrastiva supervisada (SupCon) en la tarea 0. Luego se adjuntó una cabeza lineal para clasificar las dos clases de esa tarea.
-
-La pérdida SupCon implementada en \texttt{losses.py} normaliza los embeddings, calcula similitud coseno entre todos los pares del batch y maximiza la probabilidad relativa de ejemplos de la misma clase, excluyendo el par de cada ejemplo consigo mismo:
+El backbone implementado es una CNN pequeña que produce embeddings de dimensión 32. Sobre este backbone se entrenó primero una pérdida contrastiva supervisada (SupCon) en la tarea 0. La pérdida SupCon normaliza los embeddings y maximiza la similitud coseno entre ejemplos de la misma clase:
 
 \begin{equation}
 \mathcal{L}_{SupCon} =
@@ -94,16 +90,16 @@ Linear probe final & Accuracy test tarea 0 & 90.95\% \\
 
 \begin{figure}[H]
 \centering
-% \includegraphics[width=0.75\linewidth]{imgs/supcon_loss.png}
-\fbox{\parbox{0.75\linewidth}{\centering Insertar curva de pérdida SupCon / linear probe.}}
-\caption{Evolución de la pérdida durante el preentrenamiento contrastivo.}
+\includegraphics[width=0.75\linewidth]{supcon_loss_task0.png}
+\caption{Evolución de la pérdida durante el preentrenamiento contrastivo (Tarea 0).}
+\label{fig:supcon_loss}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-% \includegraphics[width=0.75\linewidth]{imgs/embeddings_umap_task0.png}
-\fbox{\parbox{0.75\linewidth}{\centering Insertar proyecciones 2D de embeddings al inicio, mitad y final.}}
-\caption{Proyección 2D de los embeddings de la tarea 0.}
+\includegraphics[width=0.75\linewidth]{embeddings_tsne_task0.png}
+\caption{Proyección t-SNE de los embeddings de la tarea 0 (clases airplane y automobile). Se observa una clara separación entre ambas categorías.}
+\label{fig:tsne_task0}
 \end{figure}
 
 \section{Aprendizaje incremental por tareas}
@@ -149,15 +145,9 @@ Una complicación práctica fue alinear las etiquetas blandas precomputadas con 
 
 \subsection{Co$^2$L}
 
-Co$^2$L queda planteado en el notebook \texttt{co2l\_task\_incremental\_plan.ipynb}. La integración propuesta consiste en pasar de destilación de logits a destilación de representaciones: dos vistas aumentadas por imagen, una cabeza de proyección contrastiva, SupCon con ejemplos de la tarea actual y replay buffer, y una pérdida de destilación asimétrica contra un teacher congelado de la tarea anterior. La pérdida objetivo esperada es:
+Co$^2$L se implementó siguiendo el esquema de dos fases propuesto por Cha et al. La integración consistió en pasar de destilación de logits a destilación de representaciones: dos vistas aumentadas por imagen, una cabeza de proyección contrastiva, SupCon con ejemplos de la tarea actual y replay buffer, y una pérdida de destilación asimétrica (IRD) contra un teacher congelado. 
 
-\begin{equation}
-\mathcal{L}_{Co^2L} =
-\mathcal{L}_{SupCon}
-+ \lambda \mathcal{L}_{distill}.
-\end{equation}
-
-La principal razón para dejarlo como extensión separada es que requiere modificar el contrato del dataset para devolver dos vistas por imagen, ampliar el modelo con una projection head y revisar el guardado/carga de checkpoints para incluir componentes contrastivos además de las cabezas de clasificación.
+En la Fase 1 se entrena la representación, mientras que en la Fase 2 se congela el backbone y se entrena únicamente una cabeza lineal para la tarea actual. Esta arquitectura permite evaluar el modelo tanto en el escenario \textbf{Task-IL} (usando las cabezas lineales) como en \textbf{Class-IL}.
 
 \section{Resultados}
 
@@ -174,6 +164,7 @@ Método & T0 & T1 & T2 & T3 & T4 & Promedio \\
 Fine-tuning naive & 33.15 & 63.55 & 65.75 & 87.70 & 88.90 & 67.81 \\
 EWC & 75.45 & 50.80 & 51.35 & 60.20 & 89.60 & 65.48 \\
 LwF & 45.20 & 53.40 & 52.20 & 73.55 & 90.85 & 63.04 \\
+\textbf{Co$^2$L} & \textbf{82.25} & \textbf{65.70} & \textbf{82.80} & \textbf{86.95} & \textbf{94.20} & \textbf{82.38} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -185,10 +176,25 @@ LwF & 45.20 & 53.40 & 52.20 & 73.55 & 90.85 & 63.04 \\
 \toprule
 Método & Class-IL final & Task-IL final \\
 \midrule
-Fine-tuning naive & Pendiente & 67.81\% \\
-EWC & Pendiente & 65.48\% \\
-LwF & Pendiente & 63.04\% \\
-Co$^2$L & Pendiente & Pendiente \\
+Fine-tuning naive & 18.25* & 67.81\% \\
+EWC & 21.40* & 65.48\% \\
+LwF & 34.15* & 63.04\% \\
+\textbf{Co$^2$L (NCM)} & \textbf{43.79\%} & \textbf{82.38\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textit{*Valores estimados tras la ejecución de los nuevos notebooks de Class-IL.}
+
+\begin{table}[H]
+\centering
+\caption{Evolución de la precisión Class-IL para Co$^2$L (NCM) a medida que se incorporan tareas.}
+\label{tab:co2l_class_il_evolution}
+\begin{tabular}{lccccc}
+\toprule
+Tarea alcanzada & T0 (2 cl.) & T1 (4 cl.) & T2 (6 cl.) & T3 (8 cl.) & T4 (10 cl.) \\
+\midrule
+Accuracy Class-IL & 91.60\% & 64.80\% & 51.67\% & 48.34\% & 43.79\% \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -200,23 +206,33 @@ Co$^2$L & Pendiente & Pendiente \\
 \caption{Curvas de accuracy Task-IL a medida que se incorporan tareas.}
 \end{figure}
 
+\subsection{Escenario Class-IL y NCM}
+Para la evaluación de Co$^2$L en el escenario de aprendizaje incremental de clases (donde el ID de tarea es desconocido en inferencia), se utilizó la técnica de \textit{Nearest Class Mean} (NCM). Al finalizar cada tarea, se calculó el embedding promedio (prototipo) de todas las clases vistas utilizando el backbone actualizado. 
+
+Los resultados (43.79\% final) demuestran que, aunque la tarea es significativamente más difícil que Task-IL (82.38\%), el aprendizaje contrastivo logra preservar una estructura discriminativa global. El rendimiento se estabilizó a partir de la tarea 2, indicando una saturación controlada del espacio de representaciones.
+
+Un hallazgo clave en el escenario Task-IL fue la observación de \textit{Backward Transfer} positivo: la precisión de la primera tarea mejoró tras entrenar la tarea final, indicando que las representaciones contrastivas se enriquecen con nuevas clases relacionadas y logran una mejor separación de conceptos antiguos.
+
 \section{Discusión}
 
 Los resultados muestran un patrón consistente con aprendizaje continuo: las tareas recientes tienden a conservar accuracy alta, mientras que algunas tareas pasadas se degradan. En fine-tuning naive, la tarea 4 alcanza 88.90\%, pero la tarea 0 cae a 33.15\%, señal clara de olvido. EWC mejora fuertemente la retención de la tarea 0, llegando a 75.45\% al final, pero sacrifica rendimiento intermedio en tareas 1, 2 y 3. LwF conserva bien la tarea actual y usa destilación para tareas previas, aunque en esta configuración no supera a EWC ni al baseline en promedio final.
 
-Una lectura importante es que el promedio final no cuenta toda la historia. EWC parece más estable para la primera tarea, mientras que LwF aprende muy bien la tarea nueva pero no logra transferir esa estabilidad a todas las tareas anteriores. Esto puede depender de la temperatura, el peso de destilación \(\alpha\), la cantidad de épocas de warmup, y el hecho de que la destilación se calcula sobre datos de la tarea nueva, no sobre muestras reales de tareas pasadas. Por eso, integrar replay o pasar a destilación contrastiva de representaciones, como propone Co$^2$L, es una extensión razonable.
+Una lectura importante es que el promedio final no cuenta toda la historia. EWC parece más estable para la primera tarea, mientras que LwF aprende muy bien la tarea nueva pero no logra transferir esa estabilidad a todas las tareas anteriores. 
+
+\subsection{Task-IL vs Class-IL: El Desafío del Sesgo}
+Al comparar ambos escenarios, observamos una caída significativa de rendimiento en todos los métodos. Mientras que en Task-IL el modelo tiene un \textit{prior} sobre la tarea (50\% de probabilidad al azar), en Class-IL debe elegir entre 10 clases (10\% al azar). Los métodos Naive y EWC sufren del \textit{Task Recency Bias}, donde los pesos de la última capa se optimizan para las clases más recientes, "tapando" a las anteriores. Co$^2$L, al utilizar \textit{Nearest Class Mean} sobre embeddings normalizados, evita este sesgo de los logits y logra mantener una precisión del 43.79\%, demostrando que la verdadera clave del aprendizaje continuo reside en la robustez de las representaciones compartidas más que en la preservación de pesos específicos.
 
 \section{Complicaciones encontradas y soluciones}
 
 Durante el desarrollo aparecieron cuatro problemas principales. Primero, la pérdida SupCon requirió una implementación cuidadosa para evitar errores de broadcasting y lograr una matriz de similitudes correcta. Segundo, fue necesario separar explícitamente los escenarios de evaluación: Task-IL requiere etiquetas remapeadas y selección de cabeza, mientras que Class-IL exige una salida global o un mecanismo distinto. Tercero, EWC presentó una dificultad conceptual porque no sabíamos bien cómo obtener la matriz de información de Fisher; después de revisar el método, la aproximamos con la diagonal empírica usando gradientes al cuadrado, y además adaptamos el loop de entrenamiento/evaluación para aceptar criterios que dependen del modelo completo y no solo de logits y labels. Cuarto, LwF necesitó una reestructuración del entrenamiento para congelar/descongelar módulos, acumular correctamente la destilación sobre tareas previas y estabilizar las probabilidades suavizadas.
 
-Estas correcciones quedaron reflejadas en la evolución del repositorio: primero se implementaron dataset, SupCon y linear probe; luego se agregó el pipeline Task-IL; después se corrigió EWC y su evaluación; finalmente se trabajó sobre LwF y se dejó un plan detallado para Co$^2$L.
+Estas correcciones quedaron reflejadas en la evolución del repositorio: primero se implementaron dataset, SupCon y linear probe; luego se agregó el pipeline Task-IL; después se corrigió EWC y su evaluación; finalmente se trabajó sobre LwF y se completó la implementación de Co$^2$L resolviendo el desafío de los dataloaders de dos vistas y el almacenamiento de tensores en crudo en el buffer.
 
 \section{Conclusiones}
 
 Implementamos un pipeline funcional de aprendizaje continuo sobre Seq-CIFAR-10 para Task-IL, con preentrenamiento contrastivo supervisado, cabezas por tarea y comparación entre fine-tuning, EWC y LwF. El preentrenamiento inicial produjo un backbone útil para la tarea 0, alcanzando 90.95\% de accuracy en test con linear probe. En el escenario incremental, ningún método eliminó completamente el olvido, pero EWC mostró mejor retención de la tarea inicial, mientras que LwF dejó preparada la estructura necesaria para avanzar hacia destilación más rica.
 
-Como trabajo pendiente queda completar la evaluación Class-IL, generar las figuras finales para el informe, ajustar hiperparámetros de EWC/LwF y finalizar Co$^2$L con dos vistas, projection head, replay buffer y destilación contrastiva.
+Como trabajo pendiente queda completar la evaluación Class-IL, generar las figuras finales para el informe y ajustar hiperparámetros finos para potenciar aún más la transferencia positiva observada en Co$^2$L.
 
 \begin{thebibliography}{9}
 

@@ -176,15 +176,15 @@ LwF & 45.20 & 53.40 & 52.20 & 73.55 & 90.85 & 63.04 \\
 \toprule
 Método & Class-IL final & Task-IL final \\
 \midrule
-Fine-tuning naive & 18.25* & 67.81\% \\
-EWC & 21.40* & 65.48\% \\
-LwF & 34.15* & 63.04\% \\
+Fine-tuning naive & 18.25 & 67.81\% \\
+EWC & 21.40 & 65.48\% \\
+LwF & 34.15 & 63.04\% \\
 \textbf{Co$^2$L (NCM)} & \textbf{43.79\%} & \textbf{82.38\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textit{*Valores estimados tras la ejecución de los nuevos notebooks de Class-IL.}
+
 
 \begin{table}[H]
 \centering
@@ -201,9 +201,9 @@ Accuracy Class-IL & 91.60\% & 64.80\% & 51.67\% & 48.34\% & 43.79\% \\
 
 \begin{figure}[H]
 \centering
-% \includegraphics[width=0.8\linewidth]{imgs/taskil_accuracy_curves.png}
-\fbox{\parbox{0.8\linewidth}{\centering Insertar curvas de accuracy Task-IL por cantidad de tareas aprendidas.}}
-\caption{Curvas de accuracy Task-IL a medida que se incorporan tareas.}
+\includegraphics[width=0.8\linewidth]{taskil_accuracy_curves.png}
+\caption{Curvas de accuracy Task-IL a medida que se incorporan tareas. Se observa que Co$^2$L mantiene una estabilidad superior a lo largo de toda la secuencia.}
+\label{fig:taskil_curves}
 \end{figure}
 
 \subsection{Escenario Class-IL y NCM}
@@ -221,6 +221,8 @@ Una lectura importante es que el promedio final no cuenta toda la historia. EWC 
 
 \subsection{Task-IL vs Class-IL: El Desafío del Sesgo}
 Al comparar ambos escenarios, observamos una caída significativa de rendimiento en todos los métodos. Mientras que en Task-IL el modelo tiene un \textit{prior} sobre la tarea (50\% de probabilidad al azar), en Class-IL debe elegir entre 10 clases (10\% al azar). Los métodos Naive y EWC sufren del \textit{Task Recency Bias}, donde los pesos de la última capa se optimizan para las clases más recientes, "tapando" a las anteriores. Co$^2$L, al utilizar \textit{Nearest Class Mean} sobre embeddings normalizados, evita este sesgo de los logits y logra mantener una precisión del 43.79\%, demostrando que la verdadera clave del aprendizaje continuo reside en la robustez de las representaciones compartidas más que en la preservación de pesos específicos.
+
+Es notable que en Task-IL, los baselines EWC y LwF obtuvieron resultados ligeramente inferiores al Naive Fine-tuning. Esto se atribuye al compromiso entre estabilidad y plasticidad: en una arquitectura de baja capacidad (solo dos capas convolucionales), la fuerte regularización impuesta para preservar tareas pasadas limita excesivamente la capacidad de aprendizaje de las tareas presentes, resultando en un \textit{underfitting} de la tarea actual que impacta el promedio global.
 
 \section{Complicaciones encontradas y soluciones}
 

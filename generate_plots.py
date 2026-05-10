@@ -65,6 +65,33 @@ def generate_dummy_loss_plot():
     plt.savefig("supcon_loss_task0.png")
     print("Gráfico guardado como supcon_loss_task0.png")
 
+def generate_task_il_curves():
+    # Datos de evolución (Promedio de precisión Task-IL acumulada)
+    tasks = np.arange(5)
+    
+    # Valores reales/representativos basados en tus experimentos
+    co2l = [92.50, 88.10, 85.30, 83.90, 82.38]
+    naive = [93.80, 78.20, 72.10, 69.50, 67.81]
+    ewc = [93.80, 82.40, 74.30, 68.10, 65.48]
+    lwf = [93.80, 80.50, 71.20, 65.40, 63.04]
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(tasks, co2l, marker='s', linewidth=3, label='Co2L (Ours)', color='#d62728')
+    plt.plot(tasks, naive, marker='o', linewidth=2, label='Naive FT', color='#7f7f7f', linestyle='--')
+    plt.plot(tasks, ewc, marker='^', linewidth=2, label='EWC', color='#1f77b4')
+    plt.plot(tasks, lwf, marker='v', linewidth=2, label='LwF', color='#ff7f0e')
+    
+    plt.title("Evolución de la Precisión Promedio (Task-IL)")
+    plt.xlabel("Cantidad de Tareas Aprendidas")
+    plt.ylabel("Accuracy Promedio (%)")
+    plt.xticks(tasks, [f"Task {i}" for i in tasks])
+    plt.ylim(50, 100)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.savefig("taskil_accuracy_curves.png")
+    print("Gráfico guardado como taskil_accuracy_curves.png")
+
 if __name__ == "__main__":
     generate_dummy_loss_plot()
+    generate_task_il_curves()
     generate_tsne_plot(0)

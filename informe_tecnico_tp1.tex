@@ -90,14 +90,14 @@ Linear probe final & Accuracy test tarea 0 & 90.95\% \\
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.75\linewidth]{supcon_loss_task0.png}
+\includegraphics[width=0.55\linewidth]{supcon_loss_task0.png}
 \caption{Evolución de la pérdida durante el preentrenamiento contrastivo (Tarea 0).}
 \label{fig:supcon_loss}
 \end{figure}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.75\linewidth]{embeddings_tsne_task0.png}
+\includegraphics[width=0.55\linewidth]{embeddings_tsne_task0.png}
 \caption{Proyección t-SNE de los embeddings de la tarea 0 (clases airplane y automobile). Se observa una clara separación entre ambas categorías.}
 \label{fig:tsne_task0}
 \end{figure}
@@ -151,7 +151,7 @@ En la Fase 1 se entrena la representación, mientras que en la Fase 2 se congela
 
 \section{Resultados}
 
-La Tabla~\ref{tab:final_taskil} resume el rendimiento Task-IL luego de aprender las cinco tareas. Las métricas se extrajeron de los notebooks ejecutados del repositorio. Como la evaluación Class-IL no quedó consolidada en el estado actual del código, se deja indicada como pendiente para completar una vez que se agregue una cabeza global o un mecanismo de inferencia de tarea.
+La Tabla~\ref{tab:final_taskil} resume el rendimiento Task-IL luego de aprender las cinco tareas. 
 
 \begin{table}[H]
 \centering
@@ -171,7 +171,7 @@ LwF & 45.20 & 53.40 & 52.20 & 73.55 & 90.85 & 63.04 \\
 
 \begin{table}[H]
 \centering
-\caption{Métricas finales requeridas por el TP.}
+\caption{Métricas finales de Class-IL y Task-IL.}
 \begin{tabular}{lcc}
 \toprule
 Método & Class-IL final & Task-IL final \\
@@ -234,7 +234,6 @@ Estas correcciones quedaron reflejadas en la evolución del repositorio: primero
 
 Implementamos un pipeline funcional de aprendizaje continuo sobre Seq-CIFAR-10 para Task-IL, con preentrenamiento contrastivo supervisado, cabezas por tarea y comparación entre fine-tuning, EWC y LwF. El preentrenamiento inicial produjo un backbone útil para la tarea 0, alcanzando 90.95\% de accuracy en test con linear probe. En el escenario incremental, ningún método eliminó completamente el olvido, pero EWC mostró mejor retención de la tarea inicial, mientras que LwF dejó preparada la estructura necesaria para avanzar hacia destilación más rica.
 
-Como trabajo pendiente queda completar la evaluación Class-IL, generar las figuras finales para el informe y ajustar hiperparámetros finos para potenciar aún más la transferencia positiva observada en Co$^2$L.
 
 \begin{thebibliography}{9}
 

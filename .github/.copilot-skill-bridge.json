@@ -1,0 +1,12 @@
+{
+  "skills": {},
+  "mcpServers": {},
+  "marketplaces": [],
+  "settings": {
+    "checkInterval": 86400,
+    "autoAcceptUpdates": false
+  },
+  "migration": {
+    "skillsPrompted": true
+  }
+}

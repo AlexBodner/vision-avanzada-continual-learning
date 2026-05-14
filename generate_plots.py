@@ -51,32 +51,47 @@ def generate_tsne_plot(task_id=0):
     plt.savefig("embeddings_tsne_task0.png")
     print("Gráfico guardado como embeddings_tsne_task0.png")
 
-def generate_dummy_loss_plot():
-    # Basado en los logs reales que vimos de SupCon Task 0
-    epochs = np.arange(1, 11)
-    loss = [5.4189, 5.3379, 5.2856, 5.2479, 5.2394, 5.2070, 5.2030, 5.1840, 5.1715, 5.1673]
-    
+def generate_supcon_loss_plot():
+    ckpt_path = "checkpoints/task_0_pretrain/supcon_backbone.pt"
+    if not os.path.exists(ckpt_path):
+        print(f"Error: No se encontró el checkpoint de SupCon en {ckpt_path}")
+        return
+
+    ckpt = torch.load(ckpt_path, map_location="cpu")
+    train_losses = ckpt.get("train_losses", [])
+    val_losses = ckpt.get("val_losses", [])
+
+    if len(train_losses) == 0 or len(val_losses) == 0:
+        print("Error: El checkpoint no contiene train_losses/val_losses.")
+        return
+
+    epochs = np.arange(1, len(train_losses) + 1)
+
     plt.figure(figsize=(10, 6))
-    plt.plot(epochs, loss, marker='o', linestyle='-', color='#1f77b4', linewidth=2)
+    plt.plot(epochs, train_losses, marker='o', linestyle='-', linewidth=2, label='Train Loss')
+    plt.plot(epochs, val_losses, marker='s', linestyle='-', linewidth=2, label='Validation Loss')
     plt.title("Evolución de la Pérdida SupCon (Tarea 0)")
-    plt.xlabel("Época")
+    plt.xlabel("Epochs")
     plt.ylabel("Loss")
     plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.savefig("supcon_loss_task0.png")
     print("Gráfico guardado como supcon_loss_task0.png")
 
 def generate_task_il_curves():
-    # Datos de evolución (Promedio de precisión Task-IL acumulada)
+    # Datos de evolución (promedio Task-IL acumulado) con pretraining SupCon de 30 épocas
     tasks = np.arange(5)
-    
-    # Valores reales/representativos basados en tus experimentos
-    co2l = [92.50, 88.10, 85.30, 83.90, 82.38]
-    naive = [93.80, 78.20, 72.10, 69.50, 67.81]
-    ewc = [93.80, 82.40, 74.30, 68.10, 65.48]
-    lwf = [93.80, 80.50, 71.20, 65.40, 63.04]
+
+    # Co2L reentrenado (corrida final homogénea)
+    co2l = [95.10, 88.55, 84.32, 82.04, 79.82]
+
+    # Naive / EWC / LwF actualizados con las corridas más recientes
+    naive = [91.80, 74.05, 69.90, 72.29, 75.64]
+    ewc = [91.80, 74.60, 73.02, 73.53, 73.87]
+    lwf = [91.80, 65.40, 64.28, 63.14, 64.49]
     
     plt.figure(figsize=(10, 6))
-    plt.plot(tasks, co2l, marker='s', linewidth=3, label='Co2L (Ours)', color='#d62728')
+    plt.plot(tasks, co2l, marker='s', linewidth=3, label='Co2L', color='#d62728')
     plt.plot(tasks, naive, marker='o', linewidth=2, label='Naive FT', color='#7f7f7f', linestyle='--')
     plt.plot(tasks, ewc, marker='^', linewidth=2, label='EWC', color='#1f77b4')
     plt.plot(tasks, lwf, marker='v', linewidth=2, label='LwF', color='#ff7f0e')
@@ -92,6 +107,6 @@ def generate_task_il_curves():
     print("Gráfico guardado como taskil_accuracy_curves.png")
 
 if __name__ == "__main__":
-    generate_dummy_loss_plot()
+    generate_supcon_loss_plot()
     generate_task_il_curves()
     generate_tsne_plot(0)

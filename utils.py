@@ -1,4 +1,3 @@
-
 import torch
 from models import CNN, LinearProbe, TaskIncrementalClassifier, Co2LModel
 
@@ -6,12 +5,10 @@ def load_classifier(checkpoint_path, device):
     head_ckpt = torch.load(f"{checkpoint_path}/linear_probe_head.pt", map_location=device)
     backbone_ckpt = torch.load(f"{checkpoint_path}/supcon_backbone.pt", map_location=device)
 
-    # Recreate backbone model object, then load its state_dict
     backbone_model = CNN(in_channels=3, embedding_dim=32).to(device)
     backbone_model.load_state_dict(backbone_ckpt["model_state_dict"])
     backbone_model.eval()
 
-    # Recreate linear probe with backbone model and load linear head
     reloaded_linear_probe = LinearProbe(
         backbone_model,
         embedding_dim=32,
@@ -20,7 +17,6 @@ def load_classifier(checkpoint_path, device):
     reloaded_linear_probe.classifier.load_state_dict(head_ckpt["classifier_state_dict"])
     reloaded_linear_probe.eval()
 
-    print("Backbone + linear head loaded successfully into reloaded_linear_probe.")
     return reloaded_linear_probe
 
 
@@ -37,7 +33,6 @@ def load_task_incremental_from_pretrain(checkpoint_path, device, task_id=0):
     model.get_head(task_id).load_state_dict(head_ckpt["classifier_state_dict"])
     model = model.to(device)
 
-    print("Backbone + task head loaded successfully into task-incremental classifier.")
     return model
 
 
@@ -71,7 +66,6 @@ def load_task_incremental_classifier(checkpoint_path, device):
 
 
 def save_co2l_model(model, checkpoint_path):
-    """Guarda el estado completo de un Co2LModel."""
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -86,7 +80,6 @@ def save_co2l_model(model, checkpoint_path):
 
 
 def load_co2l_model(checkpoint_path, device, proj_dim=128):
-    """Carga un Co2LModel desde un checkpoint."""
     checkpoint = torch.load(checkpoint_path, map_location=device)
     embedding_dim = checkpoint["embedding_dim"]
 

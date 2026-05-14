@@ -21,7 +21,7 @@ Incluye:
 - `naive_class_il.ipynb`: evaluacion Class-IL para Naive.
 - `ewc_class_il.ipynb`: evaluacion Class-IL para EWC.
 - `lwf_class_il.ipynb`: evaluacion Class-IL para LwF.
-- `co2l_class_il.ipynb`: evaluacion Class-IL para Co2L usando NCM.
+- `co2l_class_il.ipynb`: evaluacion Class-IL para Co2L (comparando NCM vs Logits agregados).
 
 ### Donde implementamos cada parte principal
 
@@ -30,7 +30,7 @@ Incluye:
 - Task-IL con LwF: `lwf_task_incremental.ipynb`.
 - Task-IL con Co2L (dos fases): `co2l_task_incremental_plan.ipynb`.
 - Class-IL con Naive/EWC/LwF: `naive_class_il.ipynb`, `ewc_class_il.ipynb`, `lwf_class_il.ipynb`.
-- Class-IL para Co2L con NCM: `co2l_class_il.ipynb` y funciones de `utils_class_il.py`.
+- Class-IL para Co2L (NCM y Logits): `co2l_class_il.ipynb` y funciones de `utils_class_il.py`.
 - Carga de datos, particion en tareas y replay buffer: `dataloaders.py`.
 - Definicion de modelos (backbone, cabezas y wrappers de CL): `models.py`.
 - Definicion de perdidas (incluyendo Co2L): `losses.py`.
@@ -111,3 +111,4 @@ En macOS con Apple Silicon, PyTorch puede usar `mps` automaticamente si esta dis
 - LwF Task-IL: 64.49
 - Co2L Task-IL: 79.82
 - Co2L Class-IL con NCM: 50.82
+- Co2L Class-IL sin NCM: ~17% 

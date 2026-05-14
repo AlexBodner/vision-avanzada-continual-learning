@@ -1,35 +1,20 @@
-
+import os
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 from copy import deepcopy
-import os
+from torch.utils.data import DataLoader, ConcatDataset
 
 from models import CNN, Co2LModel
-from losses import AsymmetricSupConLoss, IRDLoss
 from dataloaders import SequentialCIFAR10
-from utils import save_co2l_model
+from losses import AsymmetricSupConLoss, IRDLoss
+from utils import save_co2l_model, load_co2l_model
 
-def train_co2l_phase1(
-    model, 
-    teacher, 
-    train_loader, 
-    device, 
-    epochs=10, 
-    lr=1e-3, 
-    lambda_ird=1.0,
-    tau=0.07
-):
-    """
-    Fase 1: Aprendizaje de Representaciones.
-    Usa Asymmetric SupCon + IRD Distillation.
-    """
+def train_co2l_phase1(model, teacher, train_loader, device, epochs=20, lr=1e-3, tau=0.07, lambda_ird=1.0):
     model.train()
     model.unfreeze_representation()
     
-    # Solo optimizamos el backbone y el projection head
-    optimizer = torch.optim.AdamW(
+    optimizer = torch.optim.Adam(
         list(model.backbone.parameters()) + list(model.projection_head.parameters()), 
         lr=lr
     )
